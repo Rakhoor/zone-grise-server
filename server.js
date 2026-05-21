@@ -15,18 +15,19 @@ const io = new Server(server, {
   },
 })
 
-const games = {}
+const rooms = {}
+
+function genererCode() {
+  return Math.random().toString(36).substring(2, 6).toUpperCase()
+}
 
 io.on("connection", (socket) => {
   console.log("Joueur connecté :", socket.id)
 
-  socket.on("create-game", ({ pseudo }) => {
-    const code = Math.random()
-      .toString(36)
-      .substring(2, 7)
-      .toUpperCase()
+  socket.on("create_room", (pseudo, callback) => {
+    const code = genererCode()
 
-    games[code] = {
+    rooms[code] = {
       joueurs: [
         {
           id: socket.id,
@@ -37,32 +38,49 @@ io.on("connection", (socket) => {
 
     socket.join(code)
 
-    socket.emit("game-created", {
-      code,
-      joueurs: games[code].joueurs,
-    })
+    callback(code)
 
-    console.log("Partie créée :", code)
+    io.to(code).emit("room_update", rooms[code])
   })
 
-  socket.on("join-game", ({ code, pseudo }) => {
-    const game = games[code]
+  socket.on("join_room", ({ code, pseudo }, callback) => {
+    const room = rooms[code]
 
-    if (!game) {
-      socket.emit("error-message", "Partie introuvable")
+    if (!room) {
+      callback({
+        success: false,
+      })
       return
     }
 
-    game.joueurs.push({
+    room.joueurs.push({
       id: socket.id,
       pseudo,
     })
 
     socket.join(code)
 
-    io.to(code).emit("players-update", game.joueurs)
+    callback({
+      success: true,
+    })
 
-    console.log(`${pseudo} a rejoint ${code}`)
+    io.to(code).emit("room_update", room)
+  })
+
+  socket.on("disconnect", () => {
+    console.log("Joueur déconnecté :", socket.id)
+
+    Object.keys(rooms).forEach((code) => {
+      rooms[code].joueurs =
+        rooms[code].joueurs.filter(
+          (j) => j.id !== socket.id
+        )
+
+      io.to(code).emit(
+        "room_update",
+        rooms[code]
+      )
+    })
   })
 })
 
